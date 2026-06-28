@@ -226,6 +226,7 @@ jobs:
         KBUILD_BUILD_TIMESTAMP: ${{ env.KBUILD_BUILD_TIMESTAMP }}
       run: |
         set -ex
+        printf '%s\n' 'CONFIG_USER_NS=y' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
         # Copy fragment to kernel tree for bazel
         cp "$GITHUB_WORKSPACE/wild_gki.fragment" aosp/arch/arm64/configs/wild_gki.fragment
         build_${{ matrix.codename }}.sh --config=release --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment || exit 1
