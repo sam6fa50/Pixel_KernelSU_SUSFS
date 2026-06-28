@@ -186,7 +186,7 @@ jobs:
         sublevel: ${{ env.SUBLEVEL }}
 
     - name: Setup Baseband Guard
-      if: contains(inputs.feature_set, 'BBG')
+      if: false   # bbg action's external `wget … vc-teahouse/Baseband-guard … | bash` setup fails (exit 127); not needed for containers. Re-enable after fixing the action.
       uses: ./.github/actions/bbg
 
     - name: Setup netfilter/ipset options
