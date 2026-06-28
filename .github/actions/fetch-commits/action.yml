@@ -33,21 +33,22 @@ runs:
 
         echo "Fetching latest commits..."
         
-        # Wild KSU
+        # KernelSU-Next
         if [ -n "${{ inputs.ksu_commit }}" ]; then
-          # Try to resolve input as a ref (branch/tag)
-          resolved_commit=$(get_commit "https://github.com/WildKernels/Wild_KSU.git" "${{ inputs.ksu_commit }}")
-          
-          if [ -n "$resolved_commit" ]; then
-            ksu_commit="$resolved_commit"
-          else
-            # If resolution failed, assume input is a commit SHA
-            ksu_commit="${{ inputs.ksu_commit }}"
-          fi
-          echo "Using provided Wild KSU commit: $ksu_commit"
+          ksu_commit="${{ inputs.ksu_commit }}"
+          echo "Using provided KernelSU-Next commit/ref: $ksu_commit"
         else
-          ksu_commit=$(get_commit "https://github.com/WildKernels/Wild_KSU.git" "refs/heads/canary")
-          echo "Wild KSU: $ksu_commit"
+          tmp_dir=$(mktemp -d)
+          git clone --depth=1 https://github.com/WildKernels/kernel_patches.git "$tmp_dir/kernel_patches"
+          KSU_PATCH_FILE=$(find "$tmp_dir/kernel_patches/wild" -maxdepth 1 -type f -name 'ksun-*-susfs-*.patch' | head -n 1)
+          rm -rf "$tmp_dir"
+          if [ -n "$KSU_PATCH_FILE" ]; then
+            ksu_commit=$(basename "$KSU_PATCH_FILE" | sed -E 's/^ksun-([0-9a-f]+)-susfs-.*/\1/')
+            echo "KernelSU-Next (from SUSFS patch): $ksu_commit"
+          else
+            ksu_commit=$(get_commit "https://github.com/KernelSU-Next/KernelSU-Next.git" "refs/heads/dev")
+            echo "KernelSU-Next (fallback dev): $ksu_commit"
+          fi
         fi
         echo "ksu_commit=$ksu_commit" >> $GITHUB_OUTPUT
         
