@@ -186,7 +186,7 @@ jobs:
         sublevel: ${{ env.SUBLEVEL }}
 
     - name: Setup Baseband Guard
-      if: contains(inputs.feature_set, 'BBG')
+      if: false   # bbg action's external `wget … vc-teahouse/Baseband-guard … | bash` setup fails (exit 127); not needed for containers. Re-enable after fixing the action.
       uses: ./.github/actions/bbg
 
     - name: Setup netfilter/ipset options
@@ -195,6 +195,7 @@ jobs:
         kernel_version: ${{ env.KERNEL_VERSION }}
 
     - name: Setup BBRv3
+      if: false   # bbr action is broken (shell ${inputs.*} + wrong patch path + missing android_version); disabled so it can't fail after SUSFS. Re-enable once the action is fixed.
       uses: ./.github/actions/bbr
       with:
         kernel_version: ${{ env.KERNEL_VERSION }}
@@ -213,7 +214,7 @@ jobs:
           # Remove ABI protected exports to prevent build errors
           rm -rf aosp/android/abi_gki_protected_exports_*
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_aarch64",\s*$//;' aosp/BUILD.bazel
-          sed -i 's/protected_modules = \[.*\]/protected_modules = []/' aospodules.bzl || true
+          sed -i 's/protected_modules = \[.*\]/protected_modules = []/' aosp/modules.bzl || true
         fi
 
     - name: Clean Kernel Flags
@@ -226,10 +227,16 @@ jobs:
         KBUILD_BUILD_TIMESTAMP: ${{ env.KBUILD_BUILD_TIMESTAMP }}
       run: |
         set -ex
-        printf '%s\n' 'CONFIG_USER_NS=y' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
+        # USER_NS dropped: on this GKI tree it needs kuid/kgid symbols (make_kuid/from_kuid/...) added to the KMI symbol list or modpost fails "undefined" for vendor modules (pptp/bluetooth/tipc). PID_NS+overlayfs+netns/cgroups are enough for ROOTFUL Docker/Podman; rootless (USER_NS) is a documented follow-up.
+        printf '%s\n' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
         # Copy fragment to kernel tree for bazel
         cp "$GITHUB_WORKSPACE/wild_gki.fragment" aosp/arch/arm64/configs/wild_gki.fragment
-        build_${{ matrix.codename }}.sh --config=release --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment || exit 1
+        # Build the GENERIC GKI kernel FROM SOURCE (//aosp:kernel_aarch64_dist) so KSU/SUSFS/our Kconfigs are
+        # compiled INTO vmlinux. NOT build_shusky.sh — that is the GS device mixed-build and uses the PREBUILT GKI
+        # core (confirmed run #5: gki_prebuilts Image + 6.1.124 naming), silently excluding KSU/SUSFS/configs.
+        # The resulting GKI Image flashes onto shiba; vendor modules stay on-device.
+        echo "::group::build-diagnostics"; ls -1 tools/bazel 2>/dev/null; tools/bazel query '//aosp/...' 2>/dev/null | grep -iE 'kernel_aarch64(_dist)?$' | head; echo "::endgroup::"
+        tools/bazel run --config=fast --lto=thin --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment //aosp:kernel_aarch64_dist -- --dist_dir="$GITHUB_WORKSPACE/kernel-dist"
 
     - name: Create Bootimgs Folder and Build Boot Images
       if: false
@@ -319,8 +326,13 @@ jobs:
 
     - name: Prepare AnyKernel3 Zip
       run: |
-        # Copy Image from normal build locations
-        cp "$GITHUB_WORKSPACE/kernel/out/$CODENAM/dist/Image.lz4" "$GITHUB_WORKSPACE/AnyKernel3/Image.lz4"
+        # Use the FROM-SOURCE GKI Image from the dist_dir — explicitly NOT the gki_prebuilts copy.
+        echo "::group::image-search"; find "$GITHUB_WORKSPACE/kernel-dist" "$GITHUB_WORKSPACE/kernel" -name 'Image.lz4' 2>/dev/null | grep -v gki_prebuilt; echo "::endgroup::"
+        IMG=$(find "$GITHUB_WORKSPACE/kernel-dist" -name 'Image.lz4' 2>/dev/null | head -n1)
+        [ -z "$IMG" ] && IMG=$(find "$GITHUB_WORKSPACE/kernel" -name 'Image.lz4' 2>/dev/null | grep -v gki_prebuilt | grep -E 'kernel_aarch64' | head -n1)
+        if [ -z "$IMG" ]; then echo "::error::from-source Image.lz4 not found"; find "$GITHUB_WORKSPACE/kernel" -name 'Image*' 2>/dev/null | grep -v gki_prebuilt | head; exit 1; fi
+        echo "Using Image: $IMG"
+        cp "$IMG" "$GITHUB_WORKSPACE/AnyKernel3/Image.lz4"
 
     - name: Scan and collect patch rejects
       id: scan
