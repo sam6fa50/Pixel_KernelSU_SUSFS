@@ -237,8 +237,8 @@ jobs:
         echo "-- candidate dist targets --"; tools/bazel query '//aosp/...' 2>/dev/null | grep -iE 'kernel_aarch64(_dist)?$' | head || echo "(bazel query unavailable)"
         echo "::endgroup::"
         if [ -f ./build_shusky.sh ]; then
-          echo ">> building via build_shusky.sh (BUILD_AOSP_KERNEL=1 = compile core from our patched source: KSU+SUSFS+Kconfigs, exports make_kuid for USER_NS)"
-          BUILD_AOSP_KERNEL=1 bash ./build_shusky.sh --config=release --lto=thin --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment
+          echo ">> building via build_shusky.sh --kernel_package=@//aosp (compile core from patched source: KSU+SUSFS+Kconfigs in kernel, exports make_kuid for USER_NS)"
+          bash ./build_shusky.sh --config=release --lto=thin --stamp --kernel_package=@//aosp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment
         else
           echo ">> building via tools/bazel //aosp:kernel_aarch64_dist (generic GKI)"
           tools/bazel build --config=fast --lto=thin --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment //aosp:kernel_aarch64_dist
