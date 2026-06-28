@@ -195,6 +195,7 @@ jobs:
         kernel_version: ${{ env.KERNEL_VERSION }}
 
     - name: Setup BBRv3
+      if: false   # bbr action is broken (shell ${inputs.*} + wrong patch path + missing android_version); disabled so it can't fail after SUSFS. Re-enable once the action is fixed.
       uses: ./.github/actions/bbr
       with:
         kernel_version: ${{ env.KERNEL_VERSION }}
@@ -229,7 +230,19 @@ jobs:
         printf '%s\n' 'CONFIG_USER_NS=y' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
         # Copy fragment to kernel tree for bazel
         cp "$GITHUB_WORKSPACE/wild_gki.fragment" aosp/arch/arm64/configs/wild_gki.fragment
-        build_${{ matrix.codename }}.sh --config=release --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment || exit 1
+        # matrix.codename is empty in this reusable workflow -> build_.sh was nonexistent. Diagnose + pick the real entrypoint.
+        echo "::group::build-entrypoint-diagnostics"
+        echo "-- build_*.sh at kernel root --"; ls -1 build_*.sh 2>/dev/null || echo "(none)"
+        echo "-- tools/bazel? --"; ls -1 tools/bazel 2>/dev/null || echo "(none)"
+        echo "-- candidate dist targets --"; tools/bazel query '//aosp/...' 2>/dev/null | grep -iE 'kernel_aarch64(_dist)?$' | head || echo "(bazel query unavailable)"
+        echo "::endgroup::"
+        if [ -f ./build_shusky.sh ]; then
+          echo ">> building via build_shusky.sh (device script — original intent)"
+          bash ./build_shusky.sh --config=release --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment
+        else
+          echo ">> building via tools/bazel //aosp:kernel_aarch64_dist (generic GKI)"
+          tools/bazel build --config=fast --lto=thin --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment //aosp:kernel_aarch64_dist
+        fi
 
     - name: Create Bootimgs Folder and Build Boot Images
       if: false
@@ -319,8 +332,13 @@ jobs:
 
     - name: Prepare AnyKernel3 Zip
       run: |
-        # Copy Image from normal build locations
-        cp "$GITHUB_WORKSPACE/kernel/out/$CODENAM/dist/Image.lz4" "$GITHUB_WORKSPACE/AnyKernel3/Image.lz4"
+        # $CODENAM was undefined -> path collapsed. Locate Image.lz4 wherever the build dropped it.
+        echo "::group::image-search"; find "$GITHUB_WORKSPACE/kernel" -name 'Image.lz4' 2>/dev/null; echo "::endgroup::"
+        IMG=$(find "$GITHUB_WORKSPACE/kernel" -name 'Image.lz4' 2>/dev/null | grep -E 'dist|bazel-bin' | head -n1)
+        [ -z "$IMG" ] && IMG=$(find "$GITHUB_WORKSPACE/kernel" -name 'Image.lz4' 2>/dev/null | head -n1)
+        if [ -z "$IMG" ]; then echo "::error::Image.lz4 not found after build"; find "$GITHUB_WORKSPACE/kernel" -name 'Image*' 2>/dev/null | head; exit 1; fi
+        echo "Using Image: $IMG"
+        cp "$IMG" "$GITHUB_WORKSPACE/AnyKernel3/Image.lz4"
 
     - name: Scan and collect patch rejects
       id: scan
