@@ -214,7 +214,7 @@ jobs:
           # Remove ABI protected exports to prevent build errors
           rm -rf aosp/android/abi_gki_protected_exports_*
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_aarch64",\s*$//;' aosp/BUILD.bazel
-          sed -i 's/protected_modules = \[.*\]/protected_modules = []/' aospodules.bzl || true
+          sed -i 's/protected_modules = \[.*\]/protected_modules = []/' aosp/modules.bzl || true
         fi
 
     - name: Clean Kernel Flags
@@ -237,8 +237,8 @@ jobs:
         echo "-- candidate dist targets --"; tools/bazel query '//aosp/...' 2>/dev/null | grep -iE 'kernel_aarch64(_dist)?$' | head || echo "(bazel query unavailable)"
         echo "::endgroup::"
         if [ -f ./build_shusky.sh ]; then
-          echo ">> building via build_shusky.sh (device script — original intent)"
-          bash ./build_shusky.sh --config=release --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment
+          echo ">> building via build_shusky.sh (BUILD_AOSP_KERNEL=1 = compile core from our patched source: KSU+SUSFS+Kconfigs, exports make_kuid for USER_NS)"
+          BUILD_AOSP_KERNEL=1 bash ./build_shusky.sh --config=release --lto=thin --stamp --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment
         else
           echo ">> building via tools/bazel //aosp:kernel_aarch64_dist (generic GKI)"
           tools/bazel build --config=fast --lto=thin --defconfig_fragment=//aosp:arch/arm64/configs/wild_gki.fragment //aosp:kernel_aarch64_dist
