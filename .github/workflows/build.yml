@@ -227,7 +227,8 @@ jobs:
         KBUILD_BUILD_TIMESTAMP: ${{ env.KBUILD_BUILD_TIMESTAMP }}
       run: |
         set -ex
-        printf '%s\n' 'CONFIG_USER_NS=y' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
+        # USER_NS dropped: on this GKI tree it needs kuid/kgid symbols (make_kuid/from_kuid/...) added to the KMI symbol list or modpost fails "undefined" for vendor modules (pptp/bluetooth/tipc). PID_NS+overlayfs+netns/cgroups are enough for ROOTFUL Docker/Podman; rootless (USER_NS) is a documented follow-up.
+        printf '%s\n' 'CONFIG_PID_NS=y' 'CONFIG_SECURITY_LANDLOCK=y' 'CONFIG_OVERLAY_FS_REDIRECT_DIR=y' 'CONFIG_OVERLAY_FS_METACOPY=y' >> "$GITHUB_WORKSPACE/wild_gki.fragment"
         # Copy fragment to kernel tree for bazel
         cp "$GITHUB_WORKSPACE/wild_gki.fragment" aosp/arch/arm64/configs/wild_gki.fragment
         # matrix.codename is empty in this reusable workflow -> build_.sh was nonexistent. Diagnose + pick the real entrypoint.
